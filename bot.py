@@ -775,61 +775,60 @@ async def rebuild_ui_slash(interaction: discord.Interaction):
     await interaction.followup.send("UI rebuilt.", ephemeral=True)
 
 
-@bot.tree.command(name="migrate", description="Migrate all users from Discord roles to DB and delete roles")
-@app_commands.checks.has_permissions(administrator=True)
-async def migrate(interaction: discord.Interaction):
-    # Defer ephemerally — this can take a while on large servers
-    await interaction.response.defer(ephemeral=True)
-
-    guild = interaction.guild
-    # Force-populate the member cache so member.roles is accurate for every member
-    await guild.chunk()
-
-    # Build a name → db_id lookup for all roles currently in the DB
-    async with db.execute("SELECT id, name FROM roles") as cur:
-        db_roles = {name: db_id for db_id, name in await cur.fetchall()}
-
-    roles_to_delete = []  # Discord role objects to delete after DB writes are complete
-    migrated_users = 0    # Counter for logging/reporting
-
-    # Iterate every cached member and check their Discord roles against the DB
-    # This approach is used instead of role.members because role.members is unreliable
-    # even with chunking — iterating members and checking their roles is always accurate
-    for member in guild.members:
-        for role in member.roles:
-            if role.name in db_roles:
-                db_role_id = db_roles[role.name]
-                # Insert the subscription — OR IGNORE prevents duplicates if run more than once
-                await db.execute(
-                    "INSERT OR IGNORE INTO user_roles(user_id, role_id) VALUES(?, ?)",
-                    (member.id, db_role_id)
-                )
-                migrated_users += 1
-                log(f"[MIGRATE] {member.id} → role '{role.name}' (db_id {db_role_id})")
-
-    # Commit all user_role insertions in a single transaction
-    await db.commit()
-
-    # Collect the Discord role objects that need to be deleted from the server
-    for role in guild.roles:
-        if role.name in db_roles:
-            roles_to_delete.append(role)
-
-   
-    # DRY RUN: log deletions to file instead of performing them
-    deleted = 0
-    with open("dry_run_deletes.log", "w") as f:
-        for role in roles_to_delete:
-            try:
-                await role.delete(reason="Migrated to DB roles")
-                deleted += 1
-            except Exception as e:
-                log(f"Failed to log role {role.name}: {e}")
-
-    await interaction.followup.send(
-        f"Migration complete. Migrated {migrated_users} user-role entries. Deleted {deleted} roles.",
-        ephemeral=True
-    )
+#@bot.tree.command(name="migrate", description="Migrate all users from Discord roles to DB and delete roles")
+#@app_commands.checks.has_permissions(administrator=True)
+#async def migrate(interaction: discord.Interaction):
+#    # Defer ephemerally — this can take a while on large servers
+#    await interaction.response.defer(ephemeral=True)
+#
+#    guild = interaction.guild
+#    # Force-populate the member cache so member.roles is accurate for every member
+#    await guild.chunk()
+#
+#    # Build a name → db_id lookup for all roles currently in the DB
+#    async with db.execute("SELECT id, name FROM roles") as cur:
+#        db_roles = {name: db_id for db_id, name in await cur.fetchall()}
+#
+#    roles_to_delete = []  # Discord role objects to delete after DB writes are complete
+#    migrated_users = 0    # Counter for logging/reporting
+#
+#    # Iterate every cached member and check their Discord roles against the DB
+#    # This approach is used instead of role.members because role.members is unreliable
+#    # even with chunking — iterating members and checking their roles is always accurate
+#    for member in guild.members:
+#        for role in member.roles:
+#            if role.name in db_roles:
+#                db_role_id = db_roles[role.name]
+#                # Insert the subscription — OR IGNORE prevents duplicates if run more than once
+#                await db.execute(
+#                    "INSERT OR IGNORE INTO user_roles(user_id, role_id) VALUES(?, ?)",
+#                    (member.id, db_role_id)
+#                )
+#                migrated_users += 1
+#                log(f"[MIGRATE] {member.id} → role '{role.name}' (db_id {db_role_id})")
+#
+#    # Commit all user_role insertions in a single transaction
+#    await db.commit()
+#
+#    # Collect the Discord role objects that need to be deleted from the server
+#    for role in guild.roles:
+#        if role.name in db_roles:
+#            roles_to_delete.append(role)
+#
+#   
+#    deleted = 0
+#    with open("dry_run_deletes.log", "w") as f:
+#        for role in roles_to_delete:
+#            try:
+#                await role.delete(reason="Migrated to DB roles")
+#                deleted += 1
+#            except Exception as e:
+#                log(f"Failed to log role {role.name}: {e}")
+#
+#    await interaction.followup.send(
+#        f"Migration complete. Migrated {migrated_users} user-role entries. Deleted {deleted} roles.",
+#        ephemeral=True
+#    )
 
 
 @bot.tree.command(name="ucheck", description="Check which roles a user is subscribed to")

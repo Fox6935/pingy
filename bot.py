@@ -939,7 +939,7 @@ async def slash_sub(interaction: discord.Interaction):
     else:
         log(f"[SLASH] sub already: {interaction.user.id} -> {effective_channel.id}")
         await interaction.followup.send(
-            f"You are already subscribed to {channel_display_name}",
+            f"Yo... yes you, the one with no brain. You are already subscribed to {channel_display_name}",
             ephemeral=True,
         )
 
@@ -993,7 +993,7 @@ async def slash_unsub(interaction: discord.Interaction):
             f"{effective_channel.id}"
         )
         await interaction.followup.send(
-            f"You are already unsubscribed from {channel_display_name}",
+            f"Hey stupid dummy, you were not subscribed to {channel_display_name}",
             ephemeral=True,
         )
 

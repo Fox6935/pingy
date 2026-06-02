@@ -249,6 +249,25 @@ async def get_role_channel_objects(role_id):
 
     return channels
 
+async def get_effective_channel_and_role_rows(channel):
+    # For threads/forum posts, use the parent channel for role lookup
+    effective_channel = channel
+    parent = getattr(channel, "parent", None)
+    if parent is not None:
+        effective_channel = parent
+
+    async with db.execute(
+        """
+        SELECT role_id
+        FROM channel_roles
+        WHERE channel_id = ?
+        ORDER BY role_id
+        """,
+        (effective_channel.id,),
+    ) as cur:
+        rows = await cur.fetchall()
+
+    return effective_channel, rows
 
 async def get_role_channel_link_text(role_id):
     channels = await get_role_channel_objects(role_id)
@@ -872,6 +891,111 @@ async def slash_ucheck(interaction: discord.Interaction, member: discord.Member)
         f"**{member.display_name}** is subscribed to:\n{role_list}",
         ephemeral=True
     )
+
+
+@bot.tree.command(
+    name="sub",
+    description="Subscribe to notifications for this channel",
+)
+async def slash_sub(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+
+    effective_channel, rows = await get_effective_channel_and_role_rows(
+        interaction.channel
+    )
+
+    if not rows:
+        await interaction.followup.send(
+            "This channel is not linked to any subscription role.",
+            ephemeral=True,
+        )
+        return
+
+    role_ids = [role_id for (role_id,) in rows]
+    inserted = 0
+
+    for role_id in role_ids:
+        cur = await db.execute(
+            """
+            INSERT OR IGNORE INTO user_roles(user_id, role_id)
+            VALUES(?, ?)
+            """,
+            (interaction.user.id, role_id),
+        )
+        inserted += cur.rowcount
+
+    await db.commit()
+
+    channel_display_name = await get_role_display_name(role_ids[0])
+    if channel_display_name is None:
+        channel_display_name = effective_channel.name
+
+    if inserted > 0:
+        log(f"[SLASH] sub: {interaction.user.id} -> {effective_channel.id}")
+        await interaction.followup.send(
+            f"You are subscribed to {channel_display_name}",
+            ephemeral=True,
+        )
+    else:
+        log(f"[SLASH] sub already: {interaction.user.id} -> {effective_channel.id}")
+        await interaction.followup.send(
+            f"You are already subscribed to {channel_display_name}",
+            ephemeral=True,
+        )
+
+
+@bot.tree.command(
+    name="unsub",
+    description="Unsubscribe from notifications for this channel",
+)
+async def slash_unsub(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+
+    effective_channel, rows = await get_effective_channel_and_role_rows(
+        interaction.channel
+    )
+
+    if not rows:
+        await interaction.followup.send(
+            "This channel is not linked to any subscription role.",
+            ephemeral=True,
+        )
+        return
+
+    role_ids = [role_id for (role_id,) in rows]
+    removed = 0
+
+    for role_id in role_ids:
+        cur = await db.execute(
+            """
+            DELETE FROM user_roles
+            WHERE user_id = ? AND role_id = ?
+            """,
+            (interaction.user.id, role_id),
+        )
+        removed += cur.rowcount
+
+    await db.commit()
+
+    channel_display_name = await get_role_display_name(role_ids[0])
+    if channel_display_name is None:
+        channel_display_name = effective_channel.name
+
+    if removed > 0:
+        log(f"[SLASH] unsub: {interaction.user.id} -> {effective_channel.id}")
+        await interaction.followup.send(
+            f"You are unsubscribed from {channel_display_name}",
+            ephemeral=True,
+        )
+    else:
+        log(
+            f"[SLASH] unsub already: {interaction.user.id} -> "
+            f"{effective_channel.id}"
+        )
+        await interaction.followup.send(
+            f"You are already unsubscribed from {channel_display_name}",
+            ephemeral=True,
+        )
 
 
 @bot.event

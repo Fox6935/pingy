@@ -993,7 +993,7 @@ async def slash_unsub(interaction: discord.Interaction):
             f"{effective_channel.id}"
         )
         await interaction.followup.send(
-            f"Hey stupid dummy, you were not subscribed to {channel_display_name}",
+            f"Hey retard, you are not subscribed to {channel_display_name}",
             ephemeral=True,
         )
 

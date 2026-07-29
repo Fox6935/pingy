@@ -16,6 +16,9 @@ CONFIG_CHANNELS = "/config/channels.json"
 CONFIG_ROLES = "/config/roles.json"
 # Fallback channel ID used only on the very first run before the DB has a ui_channel_id entry
 ROLE_UI_CHANNEL = int(os.getenv('roles_channel'))
+# Set override_roles_channel=YES to use roles_channel instead of the database
+# value for the startup cleanup/rebuild.
+ROLE_UI_CHANNEL_OVERRIDE = os.getenv("override_roles_channel", "").strip().upper() == "YES"
 # Path to the flag file written when legacy import fails, signals a fresh DB is needed
 DB_FAIL_FILE = "/config/newDB"
 # Embed color for all role UI entries
@@ -347,7 +350,7 @@ class RoleLayoutView(discord.ui.LayoutView):
         for role_id, display_name, channel_text in role_entries:
             self.add_item(RoleContainer(role_id, display_name, channel_text))
 
-async def build_role_ui(ui_channel_id):
+async def build_role_ui(ui_channel_id, persist_channel_id=True):
     old_channel = bot.get_channel(ui_channel_id)
     if old_channel is None:
         try:
@@ -407,12 +410,12 @@ async def build_role_ui(ui_channel_id):
     except Exception as e:
         log(f"[UI] Failed to restore channel position: {e}")
 
-    # Update DB with new channel ID
-    await db.execute(
-        "UPDATE settings SET value=? WHERE key='ui_channel_id'",
-        (str(new_channel.id),)
-    )
-    await db.commit()
+    if persist_channel_id:
+        await db.execute(
+            "UPDATE settings SET value=? WHERE key='ui_channel_id'",
+            (str(new_channel.id),)
+        )
+        await db.commit()
 
     async with db.execute("SELECT id FROM roles") as cur:
         rows = await cur.fetchall()
@@ -1138,9 +1141,20 @@ async def on_ready():
         cleanup_users.start()
         log("Cleanup task started.")
 
-    # Rebuild the UI channel on every startup to purge stale messages
-    ui_channel_id = await get_ui_channel_id()
-    ui_channel_id = await build_role_ui(ui_channel_id)
+    # Rebuild the UI channel on every startup to purge stale messages.
+    # An environment override is deliberately not persisted to the database.
+    if ROLE_UI_CHANNEL_OVERRIDE:
+        log(
+            "[UI] override_roles_channel=YES; using roles_channel instead of "
+            "the database value for the startup rebuild."
+        )
+        ui_channel_id = await build_role_ui(
+            ROLE_UI_CHANNEL,
+            persist_channel_id=False,
+        )
+    else:
+        ui_channel_id = await get_ui_channel_id()
+        ui_channel_id = await build_role_ui(ui_channel_id)
     log("Initial UI build completed.")
 
 
